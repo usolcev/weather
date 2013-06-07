@@ -1,0 +1,161 @@
+<?php
+
+define('WEATHER_KELVIN', 272.15);
+define('WEATHER_TEMPERATURE_C', 'C');
+define('WEATHER_TEMPERATURE_K', 'K');
+/**
+ * Implements hook_menu().
+ */
+function weather_menu() {
+  // Ajax items.
+  $items['weather/%'] = array(
+    'title' => 'Get weather by city',
+    'page callback' => 'weather_get_weather',
+    'page arguments' => array(1, NULL, 'ajax'),
+    'access callback' => TRUE,
+  );
+
+  // Settings items.
+  $items['admin/config/weather'] = array(
+    'title' => 'Weather settings',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('weather_settengs_form'),
+    'access arguments' => array('configure weather'),
+  );
+
+  return $items;
+}
+
+function weather_permission() {
+  return array(
+    'configure weather' => array(
+      'title' => t('Настройки отображения блока с погодой'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_theme().
+ */
+function weather_theme() {
+  $items['weather_block'] = array(
+    'template' => 'weather',
+  );
+
+  return $items;
+}
+
+/**
+ * Template preprocess to weather.tpl.php.
+ */
+function template_preprocess_weather_block(&$vars) {
+  drupal_add_js(drupal_get_path('module', 'weather') . '/weather.js');
+  $weather = weather_get_weather();
+  $form = drupal_get_form('weather_choose_city_form');
+  $type_gradus = variable_get('weather_temperature_format');
+  switch ($type_gradus) {
+    case WEATHER_TEMPERATURE_C:
+      $vars['temperature'] = t($weather['temperature'].'°C');
+      break;
+    case WEATHER_TEMPERATURE_K:
+      $vars['temperature'] = t($weather['temperature'].'°K');
+      break;
+  }
+  $vars['city_form'] = render($form);
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function weather_block_info() {
+  $blocks['weather'] = array(
+    'info' => t('weather'),
+    'cache' => DRUPAL_CACHE_PER_ROLE,
+  );
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function weather_block_view ($delta = '') {
+  if($delta == 'weather') {
+    $block = array(
+      'subject' => t('Погода'),
+      'content' => array('#markup' => theme('weather_block')),
+    );
+  }
+  return $block;
+}
+
+/**
+ * Get weather by city.
+ */
+function weather_get_weather($city = NULL, $country = NULL, $type = 'web') {
+  $city = $city ? $city : variable_get('weather_default_city');
+  $country = $country ? $country : variable_get('weather_default_country');
+  $json = file_get_contents("http://api.openweathermap.org/data/2.5/weather?q=$city,$country");
+  $weather = drupal_json_decode($json);
+  $foo = $weather['main']['temp'];
+  $type_gradus = variable_get('weather_temperature_format');
+  switch ($type_gradus) {
+    case WEATHER_TEMPERATURE_C:
+      $foo = $foo - WEATHER_KELVIN;
+      break;
+    case WEATHER_TEMPERATURE_K:
+      break;
+  }
+  $weather = array(
+    'city' => $city,
+    'temperature' => $foo,
+    'type_gradus' => $type_gradus,
+  );
+  if ($type == 'web') {
+    return $weather;
+  }
+  else {
+    drupal_json_output($weather);
+    drupal_exit();
+  }
+}
+
+/**
+ * Form builder for choose city.
+ */
+function weather_choose_city_form() {
+  $default_city = variable_get('weather_default_city');
+  $form['city'] = array(
+    '#type' => 'select',
+    '#options' => array(
+      $default_city => t($default_city),
+      'Moscow' => t('Москва'),
+      'petersburg' => t('Cанкт-петербург'),
+      'Ekaterinburg' => t('Екатеринбург'),
+      'Krasnodar' => t('Краснодар'),
+    ),
+  );
+  return $form;
+}
+
+function weather_settengs_form() {
+  $form['weather_temperature_format'] = array(
+    '#title' => t('Еденицы измерения'),
+    '#type' => 'select',
+    '#options' => array(
+      WEATHER_TEMPERATURE_C => t('Цельсий'),
+      WEATHER_TEMPERATURE_K => t('Кельвин'),
+    ),
+    '#default_value' => variable_get('weather_temperature_format', WEATHER_TEMPERATURE_C),
+  );
+  $form['weather_default_city'] = array(
+    '#title' => t('Город по умолчанию'),
+    '#type' => 'textfield',
+    '#default_value' => variable_get('weather_default_city', 'Moscow'),
+  );
+  $form['weather_default_country'] = array(
+    '#title' => t('Страна по умолчанию'),
+    '#type' => 'textfield',
+    '#default_value' => variable_get('weather_default_country', 'ru'),
+  );
+  return system_settings_form($form);
+}

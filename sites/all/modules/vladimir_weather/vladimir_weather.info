@@ -1,0 +1,4 @@
+name = Vladimir_weather
+description = presentation of weather forecast
+core = 7.x
+configure = admin/config/vladimir_weather
